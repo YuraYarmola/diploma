@@ -1,117 +1,190 @@
 import cv2
+import os
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
-from tensorflow.keras.preprocessing import image
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import models, transforms
+from torch.utils.data import DataLoader, TensorDataset
+import threading
+from tkinter import Tk, Button, Label
+
+# Шляхи до моделі
+model_path = "model.pth"
+
+# Перевірка наявності CUDA
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Використовується пристрій: {device}")
 
 
-# Load the base MobileNetV2 model, excluding the top layer (used for classification)
-base_model = MobileNetV2(weights='imagenet', include_top=False)
-# Initialize CSRT tracker from OpenCV
-tracker = cv2.legacy.TrackerCSRT_create()
+# Завантаження натренованої моделі (MobileNet)
+class CustomModel(nn.Module):
+    def __init__(self, num_classes=10):
+        super(CustomModel, self).__init__()
+        self.base_model = models.mobilenet_v2(pretrained=True)
+        self.base_model.classifier[1] = nn.Linear(self.base_model.last_channel, num_classes)
 
-# Add new layers for object tracking
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-x = Dense(1024, activation='relu')(x)
-predictions = Dense(2, activation='softmax')(x)  # Two classes: object vs. background
-
-# Define the model that we'll train
-model = Model(inputs=base_model.input, outputs=predictions)
-
-# Freeze the base layers to retain pre-trained weights
-for layer in base_model.layers:
-    layer.trainable = False
-
-# Compile the model
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    def forward(self, x):
+        return self.base_model(x)
 
 
-def preprocess_image(img):
-    img = cv2.resize(img, (224, 224))  # Resize image to the input size for MobileNet
-    img = image.img_to_array(img)
-    img = np.expand_dims(img, axis=0)
-    img = preprocess_input(img)  # Preprocess image as per MobileNetV2 requirements
-    return img
+model = CustomModel(num_classes=10).to(device)
+
+# Завантаження моделі
+if os.path.exists(model_path):
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print("Модель завантажена!")
+    except Exception as e:
+        print(f"Помилка завантаження моделі: {e}")
+else:
+    print("Модель не знайдена, буде створена нова!")
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# Параметри
+buffer_data = []
+buffer_labels = []
+buffer_limit = 10
+training_active = False
+
+# Трансформації для входу
+transform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
 
 
-def online_learning(model, img, label):
-    # Preprocess the image
-    img = preprocess_image(img)
-
-    # Create a label for the object (1 for object, 0 for background)
-    label = np.array([label])
-    label = tf.keras.utils.to_categorical(label, num_classes=2)
-
-    # Fine-tune the model on the single image (online learning)
-    model.fit(img, label, epochs=1, verbose=0)
-
-def detect_and_track(model, frame, bbox):
-    # Crop the image using the bounding box
-    x, y, w, h = map(int, bbox)
-
-    # Crop the image using the bounding box
-    cropped_img = frame[y:y + h, x:x + w]
-
-    # Preprocess the image for the model
-    img = preprocess_image(cropped_img)
-
-    # Predict object presence
-    preds = model.predict(img)
-    class_idx = np.argmax(preds[0])
-    confidence = preds[0][class_idx]
-
-    return class_idx, confidence
+# Обробка ROI
+def preprocess_roi(roi):
+    return transform(roi).unsqueeze(0).to(device)
 
 
+# Донавчання моделі
+lock = threading.Lock()
+
+
+def train_model():
+    global buffer_data, buffer_labels
+    with lock:
+        while training_active:
+            if len(buffer_data) >= buffer_limit:
+                X_train = torch.stack(buffer_data).to(device)
+                y_train = torch.tensor(buffer_labels, dtype=torch.long).to(device)
+                dataset = TensorDataset(X_train, y_train)
+                dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+
+                model.train()
+                for epoch in range(2):  # Менше епох для швидшого донавчання
+                    for batch_data, batch_labels in dataloader:
+                        optimizer.zero_grad()
+                        outputs = model(batch_data)
+                        loss = criterion(outputs, batch_labels)
+                        loss.backward()
+                        optimizer.step()
+
+                torch.save(model.state_dict(), model_path)
+                buffer_data.clear()
+                buffer_labels.clear()
+                print("Модель збережена. Буфер очищено.")
+
+                # Завантаження оновленої моделі
+                model.load_state_dict(torch.load(model_path, map_location=device))
+                print("Оновлена модель завантажена для використання.")
+
+
+# Прогнозування за допомогою моделі
+def predict_with_model(frame, bbox):
+    x, y, w, h = [int(v) for v in bbox]
+    roi = frame[y:y + h, x:x + w]
+    roi_tensor = preprocess_roi(roi)
+    model.eval()
+    with torch.no_grad():
+        outputs = model(roi_tensor)
+        _, predicted_label = torch.max(outputs, 1)
+    return predicted_label.item()
+
+
+# Інтерфейс керування
+def start_training():
+    global training_active
+    training_active = True
+    threading.Thread(target=train_model).start()
+    print("Навчання запущено.")
+
+
+def stop_training():
+    global training_active
+    training_active = False
+    print("Навчання зупинено.")
+
+
+# Основний цикл
 def main():
-    # Load a video or webcam feed
-    cap = cv2.VideoCapture(0)  # Use webcam, or pass 'video.mp4' for video
+    global buffer_data, buffer_labels
 
-    # Read the first frame
-    ret, frame = cap.read()
-    if not ret:
-        print("Failed to capture video.")
-        return
+    video = cv2.VideoCapture(0)
+    trackers = []
 
-    # Select ROI (Region of Interest) manually for the first frame
-    bbox = cv2.selectROI(frame, False)
-    tracker.init(frame, bbox)  # Initialize the CSRT tracker
+    def on_close():
+        stop_training()
+        video.release()
+        cv2.destroyAllWindows()
+        root.destroy()
 
-    # Tracking label (1 for object)
-    tracking_label = 1
+    root = Tk()
+    root.title("Керування навчанням")
+    root.protocol("WM_DELETE_WINDOW", on_close)
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    start_button = Button(root, text="Start Training", command=start_training)
+    start_button.pack()
 
-        # Update the tracker with the current frame
-        success, bbox = tracker.update(frame)
+    stop_button = Button(root, text="Stop Training", command=stop_training)
+    stop_button.pack()
 
-        if success:
-            # Detect and track object using the AI model
-            class_idx, confidence = detect_and_track(model, frame, bbox)
+    label = Label(root, text="Використовуйте 'n' для виділення об'єктів")
+    label.pack()
 
-            # Draw bounding box if object is confidently tracked
-            if class_idx == tracking_label and confidence > 0.5:
-                x, y, w, h = map(int, bbox)
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+    def video_loop():
+        ok, frame = video.read()
+        if not ok:
+            root.quit()
+            return
 
-                # Online learning: fine-tune on the tracked object
-                online_learning(model, frame[y:y+h, x:x+w], tracking_label)
+        for tracker, label in trackers[:]:
+            ok, bbox = tracker.update(frame)
+            if ok:
+                x, y, w, h = [int(v) for v in bbox]
+                predicted_label = predict_with_model(frame, bbox)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(frame, f"Pred: {predicted_label}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0),
+                            2)
+            else:
+                trackers.remove((tracker, label))
+                print(f"Трекер для мітки {label} видалено.")
 
-        # Display the tracking result
-        cv2.imshow("Tracking", frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('n'):
+            bbox = cv2.selectROI("Select ROI", frame, False)
+            cv2.destroyWindow("Select ROI")
+            if sum(bbox) > 0:
+                label = int(input("Введіть номер класу: "))
+                roi = frame[int(bbox[1]):int(bbox[1] + bbox[3]), int(bbox[0]):int(bbox[0] + bbox[2])]
+                buffer_data.append(preprocess_roi(roi).squeeze(0))
+                buffer_labels.append(label)
 
-        # Break on 'q' key
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+                tracker = cv2.legacy.TrackerCSRT_create()
+                tracker.init(frame, bbox)
+                trackers.append((tracker, label))
 
-    cap.release()
-    cv2.destroyAllWindows()
+        cv2.imshow("Object Detection", frame)
+        root.after(10, video_loop)
+
+    video_loop()
+    root.mainloop()
 
 
 if __name__ == "__main__":
