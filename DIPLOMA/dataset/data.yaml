@@ -1,5 +1,0 @@
-train: D:\LPNU\DIPLOMA\DIPLOMA\dataset\images\train
-val: D:\LPNU\DIPLOMA\DIPLOMA\dataset\labels\train
-
-nc: 1
-names: ['yura']
