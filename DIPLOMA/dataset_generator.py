@@ -1,4 +1,5 @@
 import threading
+import uuid
 
 import cv2
 import os
@@ -20,23 +21,25 @@ def select_video():
 
 
 # --- ФУНКЦІЯ ДЛЯ ВИБОРУ ФІЛЬТРІВ ---
-def select_filters():
+def select_settings():
     root = tk.Tk()
     root.withdraw()  # Приховуємо головне вікно
 
-    filters = {}
+    settings = {}
 
     def on_submit():
         # Зберігаємо значення у словник
-        filters["rotate"] = bool(rotate_var.get())
-        filters["flip"] = bool(flip_var.get())
-        filters["blur"] = bool(blur_var.get())
-        filters["brightness"] = bool(brightness_var.get())
-        filters["contrast"] = bool(contrast_var.get())
-        filters["noise"] = bool(noise_var.get())
-        filters["noise_level"] = float(noise_level_var.get())
-        filters["brightness_level"] = float(brightness_level_var.get())
-
+        settings["rotate"] = bool(rotate_var.get())
+        settings["flip"] = bool(flip_var.get())
+        settings["blur"] = bool(blur_var.get())
+        settings["brightness"] = bool(brightness_var.get())
+        settings["contrast"] = bool(contrast_var.get())
+        settings["noise"] = bool(noise_var.get())
+        settings["noise_level"] = float(noise_level_var.get())
+        settings["brightness_level"] = float(brightness_level_var.get())
+        settings['width'] = int(width_var.get())
+        settings['height'] = int(height_var.get())
+        settings['stop_at'] = int(stop_at.get())
         filter_window.destroy()  # Закриваємо вікно
 
     # Створюємо нове вікно для вибору фільтрів
@@ -54,6 +57,10 @@ def select_filters():
     noise_var = tk.IntVar(value=0)
     noise_level_var = tk.DoubleVar(value=0.1)
     brightness_level_var = tk.DoubleVar(value=1.2)
+    width_var = tk.IntVar(value=128)
+    height_var = tk.IntVar(value=128)
+    stop_at = tk.IntVar(value=0)
+    rewrite = tk.IntVar(value=1)
 
     # Додаємо чекбокси
     tk.Checkbutton(filter_window, text="Застосовувати повороти?", variable=rotate_var,
@@ -72,13 +79,22 @@ def select_filters():
                    onvalue=1, offvalue=0).pack(anchor='w')
     tk.Scale(filter_window, label="Рівень шуму", variable=noise_level_var, from_=0, to=50, resolution=1,
              orient='horizontal').pack(anchor='w')
+    tk.Label(filter_window, text="Розмір вихідного зображення:").pack(anchor='w')
+    tk.Entry(filter_window, textvariable=width_var).pack(anchor='w')
+    tk.Entry(filter_window, textvariable=height_var).pack(anchor='w')
 
+    tk.Label(filter_window, text="Зупинити на кількості (0 - не зупиняти)").pack(anchor='w')
+    tk.Entry(filter_window, textvariable=stop_at).pack(anchor='w')
+    tk.Checkbutton(filter_window, text="Перезаписувати?", variable=rewrite,
+                   onvalue=1, offvalue=0).pack(anchor='w')
     # Кнопка підтвердження
     tk.Button(filter_window, text="Підтвердити", command=on_submit).pack()
 
     root.wait_window(filter_window)  # Очікуємо закриття вікна
     root.destroy()
-    return filters  # Повертаємо значення
+
+    return settings  # Повертаємо значення
+
 
 frame = None
 temp_frame = None
@@ -87,7 +103,7 @@ roi = (0, 0, 0, 0)
 start_point = None
 end_point = None
 roi_choose = False
-
+images_processed = 0
 
 def draw_roi(event, x, y, flags, param):
     global roi_selected, roi, start_point, end_point, temp_frame, frame, roi_choose
@@ -125,12 +141,13 @@ def draw_roi(event, x, y, flags, param):
         cv2.rectangle(temp_frame, start_point, end_point, (0, 255, 0), 2)
 
 
-def process_video(video_path, filters):
+def process_video(video_path, settings):
     pause = True
     if not video_path:
         return
 
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
+    cap.set(cv2.CAP_PROP_FPS, 1000)
     class_name = simpledialog.askstring("Клас об'єкта", "Введіть назву класу об'єкта (напр., car, person)")
     save_path = f"dataset/{class_name}"
     os.makedirs(save_path, exist_ok=True)
@@ -165,11 +182,11 @@ def process_video(video_path, filters):
                 if w > 0 and h > 0 and x >= 0 and y >= 0:
                     # Нормалізація координат та збереження
                     obj_img = frame[y:y + h, x:x + w]
-                    obj_img = cv2.resize(obj_img, (128, 128))
+                    obj_img = cv2.resize(obj_img, (settings['width'], settings['height']))
 
                     # Збереження кадрів і анотацій у окремому потоці
                     thread = threading.Thread(target=save_augmented_images, args=(
-                        obj_img, filters, save_path, frame_count, x, w, y, h, frame, class_name, annotations), daemon=True)
+                        obj_img, settings, save_path, frame_count, x, w, y, h, frame, class_name, annotations), daemon=True)
                     thread.start()
 
                     cv2.rectangle(temp_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -204,16 +221,25 @@ def process_video(video_path, filters):
     cap.release()
     cv2.destroyAllWindows()
 
-    # Збереження анотацій
+    write_data = None
+    if settings["rewrite"]:
+        write_data = annotations
+    else:
+        with open(f"{save_path}/annotations.json", "r") as f:
+            write_data = json.load(f)
+            write_data.extend(annotations)
     with open(f"{save_path}/annotations.json", "w") as f:
-        json.dump(annotations, f, indent=4)
+        json.dump(write_data, f, indent=4)
 
 
-def save_augmented_images(obj_img, filters, save_path, frame_count, x, w, y, h, frame, class_name, annotations):
-    augmented_images = apply_augmentations(obj_img, filters)
+def save_augmented_images(obj_img, settings, save_path, frame_count, x, w, y, h, frame, class_name, annotations):
+    global images_processed
+    augmented_images = apply_augmentations(obj_img, settings)
 
     for i, img in enumerate(augmented_images):
-        img_name = f"{save_path}/img_{frame_count:04d}_{i}.jpg"
+        images_processed += 1
+        img_name = (f"{save_path}/img_{frame_count:04d}_{i}"
+                    f"{'_' + str(uuid.uuid4().hex) if not settings['rewrite'] else ''}.jpg")
         cv2.imwrite(img_name, img)
         img_height, img_width, _ = frame.shape
         x_center = (x + w / 2) / img_width
@@ -223,35 +249,43 @@ def save_augmented_images(obj_img, filters, save_path, frame_count, x, w, y, h, 
         annotations.append(
             {"image": img_name, "bbox": [x_center, y_center, w_norm, h_norm], "class": class_name})
 
+        if images_processed >= settings['stop_at'] and settings['stop_at'] != 0:
+            cv2.destroyAllWindows()
+            print(f"Зупинено на {images_processed} зображеннях.")
+            quit(0)
 
-def apply_augmentations(img, filters):
+
+def apply_augmentations(img, settings):
     augmented_images = [img]
-    if filters.get("rotate", False):
+    if settings.get("rotate", False):
         angle = random.randint(-15, 15)
         (h, w) = img.shape[:2]
         M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
         rotated = cv2.warpAffine(img, M, (w, h))
         augmented_images.append(rotated)
-    if filters.get("flip", False):
+    if settings.get("flip", False):
         flipped = cv2.flip(img, 1)
         augmented_images.append(flipped)
-    if filters.get("blur", False):
+    if settings.get("blur", False):
         blurred = cv2.GaussianBlur(img, (5, 5), 0)
         augmented_images.append(blurred)
-    if filters.get("brightness", False):
-        bright = cv2.convertScaleAbs(img, alpha=filters["brightness_level"], beta=30)
+    if settings.get("brightness", False):
+        bright = cv2.convertScaleAbs(img, alpha=settings["brightness_level"], beta=30)
         augmented_images.append(bright)
-    if filters.get("contrast", False):
+    if settings.get("contrast", False):
         contrast = cv2.convertScaleAbs(img, alpha=1.5, beta=0)
         augmented_images.append(contrast)
-    if filters.get("noise", False):
-        noise = np.random.randint(0, filters["noise_level"], img.shape, dtype='uint8')
+    if settings.get("noise", False):
+        noise = np.random.randint(0, settings["noise_level"], img.shape, dtype='uint8')
         noisy = cv2.add(img, noise)
         augmented_images.append(noisy)
     return augmented_images
 
 
 if __name__ == "__main__":
+    # cv2.cuda.setDevice(0)
+    cv2.setUseOptimized(True)
+    cv2.CAP_PROP_BUFFERSIZE = 1
     video_file = select_video()
-    selected_filters = select_filters()
-    process_video(video_file, selected_filters)
+    selected_settings = select_settings()
+    process_video(video_file, selected_settings)
