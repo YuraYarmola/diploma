@@ -40,6 +40,7 @@ def select_settings():
         settings['width'] = int(width_var.get())
         settings['height'] = int(height_var.get())
         settings['stop_at'] = int(stop_at.get())
+        settings['rewrite'] = bool(rewrite.get())
         filter_window.destroy()  # Закриваємо вікно
 
     # Створюємо нове вікно для вибору фільтрів

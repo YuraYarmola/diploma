@@ -6,27 +6,36 @@ from torchvision import models
 import torch.nn as nn
 
 # --- Налаштування ---
-MODEL_PATH = "resnet50_custom.pth"  # Завантажуємо модель
-IMAGE_FOLDER = "dataset/cat"  # Папка з тестовими зображеннями
-CLASS_NAMES = ["car", "cat", "dog"] # Назви класів
+MODEL_PATH = "mobilenet_v3_small_custom_with_metadata.pth"  # Завантажуємо модель
+IMAGE_FOLDER = "dataset/dog"  # Папка з тестовими зображеннями
 
-# --- Завантаження моделі ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = models.resnet50(pretrained=False)  # Використовуємо ту саму архітектуру
-model.fc = nn.Linear(model.fc.in_features, len(CLASS_NAMES))  # Встановлюємо правильний вихідний шар
-model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+checkpoint = torch.load(MODEL_PATH, map_location=device)
+metadata = checkpoint['metadata']
+CLASS_NAMES = metadata['class_names']
+num_classes = len(CLASS_NAMES)
+
+model = getattr(models, metadata.get('model_type', 'resnet50'))(pretrained=False)
+if hasattr(model, "classifier"):
+    in_features = model.classifier[-1].in_features
+    model.classifier[-1] = nn.Linear(in_features, num_classes)
+elif hasattr(model, "fc"):
+    in_features = model.fc.in_features
+    model.fc = nn.Linear(in_features, num_classes)
+
+model.load_state_dict(checkpoint['model_state_dict'])
 model = model.to(device)
 model.eval()  # Переводимо в режим оцінки
 
 # --- Підготовка зображень ---
 transform = transforms.Compose([
-    transforms.Resize((32, 32)),  # Той самий розмір, що й при навчанні
+    transforms.Resize((metadata.get("img_size", 32), metadata.get("img_size", 32))),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2470, 0.2435, 0.2616])  # Стандартна нормалізація
+    transforms.Normalize(mean=metadata.get("normalization_mean"),
+                         std=metadata.get("normalization_std"))
 
 ])
 
-# --- Перевірка всіх зображень ---
 correct = 0
 total = 0
 
@@ -42,12 +51,14 @@ for filename in os.listdir(IMAGE_FOLDER):
             predicted_class = torch.argmax(output, dim=1).item()
 
         # --- Перевірка правильності ---
-        actual_class = CLASS_NAMES.index(IMAGE_FOLDER.split('/')[1])  # Припускаємо, що ім'я файлу містить "dog" або "cat"
+        actual_class = CLASS_NAMES.index(
+            IMAGE_FOLDER.split('/')[1])  # Припускаємо, що ім'я файлу містить "dog" або "cat"
         is_correct = predicted_class == actual_class
         total += 1
         correct += int(is_correct)
 
-        print(f"{filename}: Передбачено - {CLASS_NAMES[predicted_class]}, Реальність - {CLASS_NAMES[actual_class]}, {'✅' if is_correct else '❌'}")
+        print(
+            f"{filename}: Передбачено - {CLASS_NAMES[predicted_class]}, Реальність - {CLASS_NAMES[actual_class]}, {'✅' if is_correct else '❌'}")
 
 # --- Вивід загальної точності ---
 accuracy = (correct / total) * 100 if total > 0 else 0
