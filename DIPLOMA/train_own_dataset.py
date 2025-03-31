@@ -1,11 +1,13 @@
+import json
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
-import torchvision.models as models
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, SubsetRandomSampler
-
+import matplotlib.pyplot as plt
+from datetime import datetime
 from custom_dataset_loader import CustomDataset
 from model_get import get_model
 from normalizer import compute_mean_std
@@ -23,7 +25,7 @@ DATASET_PATH = r"D:\LPNU\DIPLOMA\DIPLOMA\dataset"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-
+date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 transform = transforms.Compose([
     transforms.ToTensor()
 ])
@@ -84,8 +86,37 @@ def train(dataset):
         accuracy = correct / total * 100
         return accuracy
 
-    # --- Функція тренування ---
+    def plot_training_results(train_losses, train_accuracies, val_accuracies, epochs, save_path=f"training_plot {date}.png"):
+        """
+        Побудова та збереження графіка навчання.
+
+        :param train_losses: Список втрат на тренуванні
+        :param train_accuracies: Список точності на тренуванні
+        :param val_accuracies: Список точності на валідації
+        :param epochs: Кількість епох
+        :param save_path: Шлях для збереження графіка
+        """
+        plt.figure(figsize=(10, 5))
+        plt.plot(range(1, epochs + 1), train_losses, label="Втрати (Train)", marker="o")
+        plt.plot(range(1, epochs + 1), train_accuracies, label="Точність (Train)", marker="s")
+        plt.plot(range(1, epochs + 1), val_accuracies, label="Точність (Validation)", marker="^")
+
+        plt.xlabel("Епохи")
+        plt.ylabel("Значення")
+        plt.title("Динаміка навчання моделі")
+        plt.legend()
+        plt.grid(True)
+
+        plt.savefig(save_path)
+        plt.show()
+
+        print(f"📊 Графік навчання збережено у {save_path}")
+
     def train_model(model, train_loader, val_loader, criterion, optimizer, epochs):
+        train_losses = []
+        train_accuracies = []
+        val_accuracies = []
+
         for epoch in range(epochs):
             model.train()
             running_loss = 0.0
@@ -105,11 +136,27 @@ def train(dataset):
                 correct += (predicted == labels).sum().item()
                 total += labels.size(0)
 
+            train_loss = running_loss / len(train_loader)
             train_acc = correct / total * 100
             val_acc = evaluate_model(model, val_loader)
-            print(
-                f"🌀 Епоха {epoch + 1}/{epochs} | Втрата: {running_loss:.4f} | Тренувальна точність: {train_acc:.2f}% | Валідаційна точність: {val_acc:.2f}%")
 
+            train_losses.append(train_loss)
+            train_accuracies.append(train_acc)
+            val_accuracies.append(val_acc)
+
+            print(
+                f"🌀 Епоха {epoch + 1}/{epochs} | Втрата: {train_loss:.4f} | Тренувальна точність: {train_acc:.2f}% | Валідаційна точність: {val_acc:.2f}%")
+
+        # 🔹 Побудова графіка після тренування
+        plot_training_results(train_losses, train_accuracies, val_accuracies, epochs)
+        json_data = {
+            "train_losses": train_losses,
+            "train_accuracies": train_accuracies,
+            "val_accuracies": val_accuracies
+        }
+        with open(f"training_results_{date}.json", "w") as f:
+            json.dump(json_data, f, indent=4)
+        # 🔹 Збереження моделі
         metadata = {
             "normalization_mean": list(mean),
             "normalization_std": list(std),
