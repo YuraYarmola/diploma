@@ -9,7 +9,7 @@ import json
 from tkinter import Tk, filedialog, simpledialog
 import tkinter as tk
 
-
+extra_stop = 0
 # --- ФУНКЦІЯ ДЛЯ ВИБОРУ ВІДЕО ---
 def select_video():
     video_path = filedialog.askopenfilename(title="Виберіть відеофайл",
@@ -150,7 +150,7 @@ def process_video(video_path, settings):
     cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_FPS, 1000)
     class_name = simpledialog.askstring("Клас об'єкта", "Введіть назву класу об'єкта (напр., car, person)")
-    save_path = f"dataset/{class_name}"
+    save_path = f"dataset128/{class_name}"
     os.makedirs(save_path, exist_ok=True)
     annotations = []
 
@@ -166,7 +166,7 @@ def process_video(video_path, settings):
     tracker = None
     frame_count = 0
 
-    while cap.isOpened():
+    while cap.isOpened() and not extra_stop:
         # Якщо ROI вибрано, ініціалізуємо трекер
         if roi_selected and tracker is None:
             tracker = cv2.legacy.TrackerCSRT_create()
@@ -222,7 +222,6 @@ def process_video(video_path, settings):
     cap.release()
     cv2.destroyAllWindows()
 
-    write_data = None
     if settings["rewrite"]:
         write_data = annotations
     else:
@@ -230,14 +229,21 @@ def process_video(video_path, settings):
             write_data = json.load(f)
             write_data.extend(annotations)
     with open(f"{save_path}/annotations.json", "w") as f:
+        print("Збереження анотацій у файл")
+        print(f"Збережено {len(write_data)} анотацій у {save_path}/annotations.json")
         json.dump(write_data, f, indent=4)
 
 
 def save_augmented_images(obj_img, settings, save_path, frame_count, x, w, y, h, frame, class_name, annotations):
-    global images_processed
+    global images_processed, extra_stop
     augmented_images = apply_augmentations(obj_img, settings)
 
     for i, img in enumerate(augmented_images):
+        if images_processed >= settings['stop_at'] and settings['stop_at'] != 0:
+            print(f"Зупинка обробки зображень. Збережено {settings['stop_at']} зображень.")
+            extra_stop = 1
+            return
+
         images_processed += 1
         img_name = (f"{save_path}/img_{frame_count:04d}_{i}"
                     f"{'_' + str(uuid.uuid4().hex) if not settings['rewrite'] else ''}.jpg")
@@ -249,11 +255,6 @@ def save_augmented_images(obj_img, settings, save_path, frame_count, x, w, y, h,
         h_norm = h / img_height
         annotations.append(
             {"image": img_name, "bbox": [x_center, y_center, w_norm, h_norm], "class": class_name})
-
-        if images_processed >= settings['stop_at'] and settings['stop_at'] != 0:
-            cv2.destroyAllWindows()
-            print(f"Зупинено на {images_processed} зображеннях.")
-            quit(0)
 
 
 def apply_augmentations(img, settings):

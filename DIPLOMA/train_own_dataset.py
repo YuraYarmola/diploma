@@ -11,14 +11,19 @@ from datetime import datetime
 from custom_dataset_loader import CustomDataset
 from model_get import get_model
 from normalizer import compute_mean_std
+import time
+
+start_time = time.time()
+
 
 # --- Гіперпараметри ---
 BATCH_SIZE = 32
 EPOCHS = 20
 LEARNING_RATE = 0.001
 IMG_SIZE = 32
-
-MODEL_TYPE = "mobilenet_v3_small"
+STOP_CRITERION = 99 # Валідаційна точність для зупинки навчання. -1 - не праховувати
+# MODEL_TYPE = "mobilenet_v3_small"
+MODEL_TYPE = "resnet50"
 MODEL_PATH = f"{MODEL_TYPE}_custom_with_metadata.pth"
 
 DATASET_PATH = r"D:\LPNU\DIPLOMA\DIPLOMA\dataset"
@@ -116,8 +121,9 @@ def train(dataset):
         train_losses = []
         train_accuracies = []
         val_accuracies = []
-
+        epochs_trained = 0
         for epoch in range(epochs):
+            epochs_trained += 1
             model.train()
             running_loss = 0.0
             correct, total = 0, 0
@@ -146,10 +152,18 @@ def train(dataset):
 
             print(
                 f"🌀 Епоха {epoch + 1}/{epochs} | Втрата: {train_loss:.4f} | Тренувальна точність: {train_acc:.2f}% | Валідаційна точність: {val_acc:.2f}%")
-
+            # 🔹 Перевірка на зупинку
+            if epoch > 0 and val_acc >= STOP_CRITERION and STOP_CRITERION!= -1:
+                print(f"🔴 Зупинка навчання: досягнуто критерію зупинки. Валідаційна точність {val_acc}")
+                break
         # 🔹 Побудова графіка після тренування
-        plot_training_results(train_losses, train_accuracies, val_accuracies, epochs)
+        train_time = time.time() - start_time
+        plot_training_results(train_losses, train_accuracies, val_accuracies, epochs_trained)
         json_data = {
+            "img_size": IMG_SIZE,
+            "model_type": MODEL_TYPE,
+            "class_names": list(dataset.class_to_idx.keys()),
+            "train_time": train_time,
             "train_losses": train_losses,
             "train_accuracies": train_accuracies,
             "val_accuracies": val_accuracies
@@ -168,6 +182,7 @@ def train(dataset):
             "model_state_dict": model.state_dict(),
             "metadata": metadata
         }, MODEL_PATH)
+        print(f"Час навчання {train_time}c")
         print(f"✅ Модель збережена в {MODEL_PATH}")
 
     train_model(model, train_loader, val_loader, criterion, optimizer, EPOCHS)

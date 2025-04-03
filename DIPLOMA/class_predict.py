@@ -8,7 +8,7 @@ import torch.nn as nn
 # --- Налаштування ---
 MODEL_PATH = "resnet50_custom.pth"  # Завантажуємо останню збережену модель
 CLASS_NAMES = ["car", "cat", "dog"]  # Назви класів
-IMAGE_PATH = "car.jpg"  # Шлях до тестового зображення
+IMAGE_PATH = r"C:\Users\uarmo\Downloads\car2.jpeg" # Шлях до тестового зображення
 
 # --- Завантаження моделі ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,8 +20,10 @@ model.eval()  # Переводимо в режим оцінки
 
 # --- Підготовка зображення ---
 transform = transforms.Compose([
-    transforms.Resize((128, 128)),  # Той самий розмір, що й при навчанні
+    transforms.Resize((32, 32)),  # Той самий розмір, що й при навчанні
     transforms.ToTensor(),
+    transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2470, 0.2435, 0.2616])  # Стандартна нормалізація
+
 ])
 
 image = Image.open(IMAGE_PATH).convert("RGB")

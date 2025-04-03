@@ -7,7 +7,7 @@ import torch.nn as nn
 
 # --- Налаштування ---
 MODEL_PATH = "mobilenet_v3_small_custom_with_metadata.pth"  # Завантажуємо модель
-IMAGE_FOLDER = "dataset/dog"  # Папка з тестовими зображеннями
+IMAGE_FOLDER = "dataset128/dog"  # Папка з тестовими зображеннями
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 checkpoint = torch.load(MODEL_PATH, map_location=device)
