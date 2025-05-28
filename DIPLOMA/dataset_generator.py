@@ -1,6 +1,6 @@
 import threading
 import uuid
-
+import time
 import cv2
 import os
 import random
@@ -8,6 +8,7 @@ import numpy as np
 import json
 from tkinter import Tk, filedialog, simpledialog
 import tkinter as tk
+import logging
 
 extra_stop = 0
 # --- ФУНКЦІЯ ДЛЯ ВИБОРУ ВІДЕО ---
@@ -147,6 +148,9 @@ def process_video(video_path, settings):
     if not video_path:
         return
 
+    start_time = time.time()
+
+    logging.info("Початок обробки відео...")
     cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_FPS, 1000)
     class_name = simpledialog.askstring("Клас об'єкта", "Введіть назву класу об'єкта (напр., car, person)")
@@ -154,7 +158,7 @@ def process_video(video_path, settings):
     os.makedirs(save_path, exist_ok=True)
     annotations = []
 
-    global roi_selected, roi, frame, temp_frame
+    global roi_selected, roi, frame, temp_frame, extra_stop
     cv2.namedWindow("Трекінг об'єкта")
     cv2.setMouseCallback("Трекінг об'єкта", draw_roi)
 
@@ -222,6 +226,15 @@ def process_video(video_path, settings):
     cap.release()
     cv2.destroyAllWindows()
 
+    end_time = time.time()
+
+    print("\n=== ПІДСУМКИ ===")
+    print(f"[INFO] Загальний час обробки: {end_time - start_time:.2f} сек")
+    print(f"[INFO] Кількість зображень: {images_processed}")
+    if images_processed > 0:
+        print(f"[INFO] Середній час на 1 зображення: {(end_time - start_time) / images_processed:.4f} сек")
+    print("=================")
+
     if settings["rewrite"]:
         write_data = annotations
     else:
@@ -239,9 +252,9 @@ def save_augmented_images(obj_img, settings, save_path, frame_count, x, w, y, h,
     augmented_images = apply_augmentations(obj_img, settings)
 
     for i, img in enumerate(augmented_images):
-        if images_processed >= settings['stop_at'] and settings['stop_at'] != 0:
-            print(f"Зупинка обробки зображень. Збережено {settings['stop_at']} зображень.")
+        if settings['stop_at'] != 0 and images_processed >= settings['stop_at']:
             extra_stop = 1
+            print(f"Зупинка обробки зображень. Збережено {images_processed} зображень.")
             return
 
         images_processed += 1
@@ -284,10 +297,14 @@ def apply_augmentations(img, settings):
     return augmented_images
 
 
-if __name__ == "__main__":
+def main():
     # cv2.cuda.setDevice(0)
     cv2.setUseOptimized(True)
     cv2.CAP_PROP_BUFFERSIZE = 1
     video_file = select_video()
     selected_settings = select_settings()
     process_video(video_file, selected_settings)
+
+
+if __name__ == "__main__":
+    main()

@@ -20,7 +20,7 @@ start_time = time.time()
 BATCH_SIZE = 32
 EPOCHS = 20
 LEARNING_RATE = 0.001
-IMG_SIZE = 32
+IMG_SIZE = 128
 STOP_CRITERION = 99 # Валідаційна точність для зупинки навчання. -1 - не праховувати
 # MODEL_TYPE = "mobilenet_v3_small"
 MODEL_TYPE = "resnet50"
@@ -53,7 +53,7 @@ def make_normilize_transform(dataset):
 
 
 # --- Створюємо індекси для тренувальної та валідаційної вибірки ---
-def train(dataset):
+def train(dataset, mean, std, show_plot = False):
     indices = list(range(len(dataset)))
     train_indices, val_indices = train_test_split(indices, test_size=0.2,
                                                   stratify=[dataset[idx][1].item() for idx in indices])
@@ -158,7 +158,8 @@ def train(dataset):
                 break
         # 🔹 Побудова графіка після тренування
         train_time = time.time() - start_time
-        plot_training_results(train_losses, train_accuracies, val_accuracies, epochs_trained)
+        if show_plot:
+            plot_training_results(train_losses, train_accuracies, val_accuracies, epochs_trained)
         json_data = {
             "img_size": IMG_SIZE,
             "model_type": MODEL_TYPE,
@@ -194,4 +195,4 @@ if __name__ == "__main__":
 
     transform, mean, std = make_normilize_transform(dataset)
     dataset.transform = transform
-    train(dataset)
+    train(dataset, mean, std)
