@@ -5,7 +5,13 @@ __pycache__/
 
 # C extensions
 *.so
-
+*.png
+*.pth
+*.jpg
+*.pyc
+.idea/
+.venv/
+*.json
 # Distribution / packaging
 .Python
 build/

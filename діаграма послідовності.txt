@@ -1,0 +1,28 @@
+@startuml
+actor User as "Користувач"
+participant "Головний Модуль" as MainModule
+participant "Модуль створення датасету" as DatasetModule
+participant "Модуль навчання моделі" as TrainingModule
+participant "Модуль оцінювання моделі" as EvaluationModule
+
+User -> MainModule: Обрати режим роботи
+alt Обрано режим створення датасету
+    MainModule -> DatasetModule: Задати параметри генерації
+    DatasetModule -> DatasetModule: Генерація датасету
+    DatasetModule --> MainModule: Датасет створено
+end
+
+alt Обрано режим навчання моделі
+    MainModule -> TrainingModule: Передати датасет і параметри
+    TrainingModule -> TrainingModule: Навчання моделі
+    TrainingModule --> MainModule: Модель навчено
+end
+
+alt Обрано режим оцінювання моделі
+    MainModule -> EvaluationModule: Передати модель і тестові дані
+    EvaluationModule -> EvaluationModule: Оцінювання моделі
+    EvaluationModule --> MainModule: Результати оцінювання
+end
+
+MainModule --> User: Повернути результати роботи
+@enduml
