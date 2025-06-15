@@ -15,16 +15,16 @@ import numpy as np
 import time
 
 # --- Гіперпараметри ---
-BATCH_SIZE = 32
-EPOCHS = 20
-LEARNING_RATE = 0.001
-IMG_SIZE = 128
+BATCH_SIZE = 32 # Розмір партії для навчання
+EPOCHS = 20 # Кількість епох для навчання
+LEARNING_RATE = 0.001 # Швидкість навчання
+IMG_SIZE = 128 # Розмір зображення для моделі
 STOP_CRITERION = 99  # Валідаційна точність для зупинки навчання. -1 - не враховувати
-MODEL_TYPE = "resnet50"
-MODEL_PATH = f"{MODEL_TYPE}_custom_with_metadata.pth"
-DATASET_PATH = r"D:\LPNU\DIPLOMA\DIPLOMA\dataset"
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+MODEL_TYPE = "resnet50" # Вибір моделі: resnet50, vgg16, mobilenet_v2, efficientnet_b0
+MODEL_PATH = f"{MODEL_TYPE}_custom_with_metadata.pth" # Шлях до збереженої моделі
+DATASET_PATH = r"D:\LPNU\DIPLOMA\DIPLOMA\dataset" # Шлях до датасету
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # Визначення пристрою
+date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") # Поточна дата і час
 
 # --- Початкові трансформації ---
 transform = transforms.Compose([

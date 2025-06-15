@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import threading
 import uuid
 import time
@@ -14,7 +16,8 @@ extra_stop = 0
 # --- ФУНКЦІЯ ДЛЯ ВИБОРУ ВІДЕО ---
 def select_video():
     video_path = filedialog.askopenfilename(title="Виберіть відеофайл",
-                                            filetypes=[("Video files", "*.mp4;*.avi;*.mov")])
+                                            filetypes=[("Video files", "*.mp4;*.avi;*.mov;*.mkv;*.wmv;*.flv;*.webm;*.m4v;*.mpg;*.mpeg;*.3gp")])
+
     if not video_path:
         print("Відео не вибрано.")
         quit(-1)
@@ -159,8 +162,8 @@ def process_video(video_path, settings):
     annotations = []
 
     global roi_selected, roi, frame, temp_frame, extra_stop
-    cv2.namedWindow("Трекінг об'єкта")
-    cv2.setMouseCallback("Трекінг об'єкта", draw_roi)
+    cv2.namedWindow("Object Tracking")
+    cv2.setMouseCallback("Object Tracking", draw_roi)
 
     ret, frame = cap.read()
     if not ret:
@@ -201,7 +204,7 @@ def process_video(video_path, settings):
         else:
             display_frame = frame.copy()
         # Відображення кадру
-        cv2.imshow("Трекінг об'єкта", display_frame)
+        cv2.imshow("Object Tracking", display_frame)
 
         key = cv2.waitKey(30) & 0xFF
         if key == 27 or key == ord('q'):  # Натискання Esc виходить із циклу
@@ -290,7 +293,7 @@ def apply_augmentations(img, settings):
     if settings.get("contrast", False):
         contrast = cv2.convertScaleAbs(img, alpha=1.5, beta=0)
         augmented_images.append(contrast)
-    if settings.get("noise", False):
+    if settings.get("noise", False) and settings["noise_level"] > 0:
         noise = np.random.randint(0, settings["noise_level"], img.shape, dtype='uint8')
         noisy = cv2.add(img, noise)
         augmented_images.append(noisy)

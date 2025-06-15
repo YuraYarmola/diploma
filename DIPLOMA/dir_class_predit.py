@@ -114,7 +114,7 @@ def main(model_path, image_folder):
 
 
 if __name__ == "__main__":
-    MODEL_PATH = "mobilenet_v3_small_custom_with_metadata.pth"
+    MODEL_PATH = "resnet50_custom_with_metadata.pth"
     IMAGE_FOLDER = "dataset128/dog"
     main(MODEL_PATH, IMAGE_FOLDER)
 
